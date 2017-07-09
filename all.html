@@ -1,0 +1,550 @@
+<HTML>
+	<head>
+		 <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+		 <meta name="viewport" content="initial-scale=1.0, user-scalable=no"/>
+		 <style type="text/css">
+			 body {overflow:auto;margin:0 0 0 0 !important ;}
+			 #all_page, #baidu_map{width: 100%;height: 100%;}
+			 #all_page{background-color:#F3F1EC;}
+			 .button{width:80px; font-size:12px}			 
+			 .BMap_cpyCtrl,.anchorBL img{display:none !important}
+			 .search_panel{ font-size:12px}
+			 .context_menu_area{display: none;position: absolute;background-color: #F3F1EC;min-width: 80px; border:solid 1px; box-shadow:rgba(0,0,0,1);}		 
+			 .context_menu_area a{color: black;padding: 4px;text-decoration: none; display: block;}
+			 .context_menu_area a:hover {background-color: #E1E1E1}
+			 .context_menu:hover .dropdown-content {display: block;}
+			 .context_menu_item {width:76px;font-size:12px}
+			 .point_list{ background-color:#ffffff; padding: 4px 6px 4px 6px; border:solid 1px;margin-left:0}
+			 .point_list_item{list-style:none; font-size:12px; align-content:center; padding: 4px 2px 4px 2px}
+			 .point_list_item:hover {background-color: #E1E1E1; cursor:pointer}
+		 </style>
+         <script type="text/javascript" src="http://api.map.baidu.com/api?v=2.0&ak=Q0O9mkEqXfiLRRfVLUl7sHDZ"></script>
+         <script type="text/javascript" src="http://libs.baidu.com/jquery/1.9.0/jquery.js"></script>
+         
+		 <title>Baidu map</title>
+	 </head>
+<body onLoad="init()">
+	<table id="all_page" cellspacing="0">
+    	<tr height="20px" align="center" valign="middle"><td align="center" valign="middle">
+        	<div class="search_panel">
+            	从&nbsp;&nbsp;&nbsp;<input type="text" width="10" id="start_pos_name">&nbsp;&nbsp;&nbsp;到&nbsp;&nbsp;&nbsp;<input type="text" width="10" id="end_pos_name">
+            </div>        	
+        </td></tr>
+    	<tr valign="top">
+        	<td>
+            	<div id = "baidu_map" onMouseDown="addMapContextMenu()"></div>
+                <div id="searchResultPanel" style="border:1px solid #C0C0C0;width:150px;height:auto; display:none;"></div>
+            </td>
+            <td width="80px">
+            	<div id = "button_div">
+                	<table>
+                    	<tr><td><input type="button" id="mypos_btn" class="button" value="我的位置" onClick="showMyCurrentPosition()"></td></tr>
+                        <tr><td>
+                        	<div class="context_menu" id="map_type_context_menu">
+                                <input type="button" class="menu_button button" value="地图切换"><br>
+                                <div class="context_menu_area" id="map_type_context_menu_area">
+                                    <a href="#" class="context_menu_item" onClick="showNormalMap()">标准地图</a>
+                                    <a href="#" class="context_menu_item" onClick="showSatelliteMap()">卫星地图</a>
+                                    <a href="#" class="context_menu_item" onClick="showPanoramaMap()">全景地图</a>
+                                </div>
+                            </div>
+                        </td></tr>                        
+                        <tr><td><input type="button" id="showall_mark_btn" class="button" value="选中点满展" onClick="showAllMarkOnMap()"></td></tr>
+                        <tr><td>
+                        	<div class="context_menu" id="nav_context_menu">
+                                <input type="button" class="menu_button button" value="道路条件"><br>
+                                <div class="context_menu_area" id="nav_context_menu_area">
+                                    <a href="#" class="context_menu_item" onClick="settingNavigationMode(0)">步行</a>
+                                    <a href="#" class="context_menu_item" onClick="settingNavigationMode(1)">高速</a>
+                                    <a href="#" class="context_menu_item" onClick="settingNavigationMode(2)">最近</a>
+                                </div>
+                            </div>
+                        </td></tr>
+                        <tr><td><input type="button" id="nav_btn" class="button" value="导航开始" onClick="startingNavigationUsingMode()"></td></tr>
+                        <tr><td><br><br><span style="font-size:12px">位置列表</span></td></tr> 
+                        <tr><td><ul id="point_list" class="point_list"></ul></td></tr>                        
+                    </table>                       
+                </div>
+            </td>
+        </tr>
+    </table>	     
+</body>
+</HTML>
+<script type = "text/javascript">
+	 var map, my_geo, panorama_layer, panorama_control;
+	 var my_pos_mark; // my locatioin mark
+	 var my_point, prev_point, cur_point, center_point, zoom_ratio; //position and zoom ratio	
+	 var timeout=2, time_count=0, timeID, sel_mark_flag=0;;
+	 var mark_arr, start_mark, target_mark;
+	 var mark_num=0, left_lng=180, top_lat=-90, right_lng=-180, bottom_lat=90;	 
+	 var map_context_menu, nav_mode=-1, routePolicy, routeColor;
+	 var nav_walk_layer, nav_drive_layer1, nav_drive_layer2, nav_drive_layer3, nav_walkshort_layer,nav_driveshort_layer;
+	 // --------------------------------- setting context menu ---------------------------------------
+	 $(document).ready(function(){
+		 var context_menu_flag=0;
+		$("#map_type_context_menu").hover(function(){
+			$("#map_type_context_menu_area").toggle();
+			context_menu_flag=1;
+		});
+		$("#nav_context_menu").hover(function(){
+			$("#nav_context_menu_area").toggle();
+			context_menu_flag=1;
+		});
+		$(".context_menu_item").click(function(){
+			$(".context_menu_item").toggle();
+			setTimeout(function(){$(".context_menu_item").toggle();},10);
+		});
+		
+	 });
+	 
+	 // --------------------------------- start position name ---------------------------------------
+	function G(id) {
+		return document.getElementById(id);
+	}	
+	var ac = new BMap.Autocomplete(    //建立一个自动完成的对象
+		{"input" : "start_pos_name"
+		,"location" : map
+	});
+
+	ac.addEventListener("onhighlight", function(e) {  //鼠标放在下拉列表上的事件
+	var str = "";
+		var _value = e.fromitem.value;
+		var value = "";
+		if (e.fromitem.index > -1) {
+			value = _value.province +  _value.city +  _value.district +  _value.street +  _value.business;
+		}    
+		str = "FromItem<br />index = " + e.fromitem.index + "<br />value = " + value;
+		
+		value = "";
+		if (e.toitem.index > -1) {
+			_value = e.toitem.value;
+			value = _value.province +  _value.city +  _value.district +  _value.street +  _value.business;
+		}    
+		str += "<br />ToItem<br />index = " + e.toitem.index + "<br />value = " + value;
+		G("searchResultPanel").innerHTML = str;
+	});
+
+	var myValue;
+	ac.addEventListener("onconfirm", function(e) {    //鼠标点击下拉列表后的事件
+	var _value = e.item.value;
+		myValue = _value.province +  _value.city +  _value.district +  _value.street +  _value.business;
+		G("searchResultPanel").innerHTML ="onconfirm<br />index = " + e.item.index + "<br />myValue = " + myValue;
+		
+		setPlaceStart();
+	});
+
+	function setPlaceStart(){
+		//map.clearOverlays();    //清除地图上所有覆盖物
+		function myFun(){
+			var pp = local.getResults().getPoi(0).point;    //获取第一个智能搜索的结果
+			map.centerAndZoom(pp, 18);
+			cur_point=pp;			
+			addPinMarkToMouseCursorPosition(0);	// start position	
+		}
+		var local = new BMap.LocalSearch(map, { //智能搜索
+		  onSearchComplete: myFun
+		});
+		local.search(myValue);
+	}
+	
+	// --------------------------------- end position name ---------------------------------------
+	function G(id) {
+		return document.getElementById(id);
+	}	
+	var ac = new BMap.Autocomplete(    //建立一个自动完成的对象
+		{"input" : "end_pos_name"
+		,"location" : map
+	});
+
+	ac.addEventListener("onhighlight", function(e) {  //鼠标放在下拉列表上的事件
+	var str = "";
+		var _value = e.fromitem.value;
+		var value = "";
+		if (e.fromitem.index > -1) {
+			value = _value.province +  _value.city +  _value.district +  _value.street +  _value.business;
+		}    
+		str = "FromItem<br />index = " + e.fromitem.index + "<br />value = " + value;
+		
+		value = "";
+		if (e.toitem.index > -1) {
+			_value = e.toitem.value;
+			value = _value.province +  _value.city +  _value.district +  _value.street +  _value.business;
+		}    
+		str += "<br />ToItem<br />index = " + e.toitem.index + "<br />value = " + value;
+		G("searchResultPanel").innerHTML = str;
+	});
+
+	var myValue;
+	ac.addEventListener("onconfirm", function(e) {    //鼠标点击下拉列表后的事件
+	var _value = e.item.value;
+		myValue = _value.province +  _value.city +  _value.district +  _value.street +  _value.business;
+		G("searchResultPanel").innerHTML ="onconfirm<br />index = " + e.item.index + "<br />myValue = " + myValue;
+		
+		setPlaceEnd();
+	});
+
+	function setPlaceEnd(){
+		//map.clearOverlays();    //清除地图上所有覆盖物
+		function myFun(){
+			var pp = local.getResults().getPoi(0).point;    //获取第一个智能搜索的结果
+			map.centerAndZoom(pp, 18);
+			cur_point=pp;			
+			addPinMarkToMouseCursorPosition(1);		
+		}
+		var local = new BMap.LocalSearch(map, { //智能搜索
+		  onSearchComplete: myFun
+		});
+		local.search(myValue);
+	}
+	 
+	 // ----------------------------- start time count ---------------------------------------	 
+	 function startTimeCount(){
+		 //timeID=setInterval(checkMouseCursorPosition,1000);		 
+	 }	
+	 // ----------------------------- stop time count ---------------------------------------	 
+	 function stopTimeCount(){
+		 //if(timeID)clearInterval(timeID); 		 
+	 }
+	 //--------------------------- init -------------------------------------------
+	 function init() {	
+	 	 map = new BMap.Map("baidu_map");	  // create Baidu map instance
+		 mark_arr=new BMap.Marker();
+		 // ----------------------- get current position ----------------------------------
+		 my_geo = new BMap.Geolocation();  
+		 my_geo.getCurrentPosition(function(position){
+			 if(this.getStatus() == BMAP_STATUS_SUCCESS){				 
+				 position.point.lng=position.point.lng+0.08907104;
+				 position.point.lat=position.point.lat+0.0066194;
+				 my_point=position.point; // set my position
+				 prev_point=null; // set cursor previous position on Baidu Map
+				 cur_point=position.point; // set cursor current position on Baidu Map
+				 center_point=position.point; // set center position on Baidu Map
+				 zoom_ratio=12; // set zoom ratio
+				 showMyCurrentPosition();
+				 var scale_ctrl=new BMap.ScaleControl();
+				 scale_ctrl.setOffset(new BMap.Size(10, 10));
+				 map.addControl(scale_ctrl);
+				 map.enableScrollWheelZoom(true);
+				 map.enableKeyboard();
+			 }
+		 });
+		 map.addEventListener("mousemove",getMousePositionInformation,false); //add mouse move event listener		 
+	 }  
+	 
+	 function addMapContextMenu(){
+		 if(map_context_menu) return;
+		 map_context_menu = new BMap.ContextMenu();
+		 var txtMenuItem = [
+		 	{ text:'保存位置', callback:function(){addPinMarkToMouseCursorPosition(2)}	}
+		 ];
+		 for(var i=0; i < txtMenuItem.length; i++){
+			map_context_menu.addItem(new BMap.MenuItem(txtMenuItem[i].text,txtMenuItem[i].callback,100));
+		 }
+		 map.addContextMenu(map_context_menu); 
+	 }	 
+	 // ----------------------------------------- show all mark -------------------------------------------------
+	 function showAllMarkOnMap(){		 
+	 	 if(mark_num<=0) return;
+		 xx=(right_lng-left_lng)/2;
+		 cx=xx+left_lng;
+		 yy=(top_lat-bottom_lat)/2;
+		 cy=top_lat-yy;	
+		 center_point=	new BMap.Point(cx,cy);
+		 for(zn=1;zn<=19;++zn){
+			 map.centerAndZoom(center_point,19-zn);// zoom out until bound area
+			 if((map.getBounds().ul.lat>top_lat && map.getBounds().ul.lng>right_lng) && (map.getBounds().Ll.lat<bottom_lat && map.getBounds().Ll.lng<left_lng))
+			 {
+				 zoom_ratio=19-zn;
+				 break;
+			 }
+		 }
+	 }
+	 //-----------------------------------------insert marker control -------------------------------
+	 function addPinMarkToMouseCursorPosition(mark_type){
+		 var myIcon, label,list_str="";
+		 if(mark_type==0){ //start 
+			myIcon = new BMap.Icon("pin_start.png", new BMap.Size(32, 32));
+		 }else if(mark_type==1){ // target
+			myIcon = new BMap.Icon("pin_target.png", new BMap.Size(32, 32));
+		 }else if(mark_type==2){ // normal
+			myIcon = new BMap.Icon("pin_normal.png", new BMap.Size(32, 32));
+		 }	
+		 	  		 
+		 var new_mark = new BMap.Marker(cur_point,{icon:myIcon}); // current my position mark
+		 for(i=0;i<mark_num;++i)
+		 {	
+		 	if((mark_arr[i].point.lng==new_mark.point.lng) && (mark_arr[i].point.lat==new_mark.point.lat))
+			{
+				alert("同一位置存在");
+				return;
+			}
+			if(mark_arr[i]!=start_mark && mark_arr[i]!=target_mark) mark_arr[i].setIcon(new BMap.Icon("pin_normal.png", new BMap.Size(32, 32)));		
+		 }
+		 	 
+		 new_mark.addEventListener("click",function(){ 
+			for(i=0;i<mark_num;++i)
+			{
+				if(mark_arr[i].getLabel()) map.removeOverlay(mark_arr[i].getLabel());
+				mark_arr[i].setAnimation(null);
+				mark_arr[i].setAnimation(null);
+			}
+			label = new BMap.Label(new_mark.point.lat+","+new_mark.point.lng,{offset:new BMap.Size(25,0)});
+			new_mark.setLabel(label);
+			++sel_mark_flag;
+			new_mark.setAnimation(BMAP_ANIMATION_BOUNCE);		
+		 });
+		 new_mark.addEventListener("mouseover",function(){ 
+			var label = new BMap.Label(new_mark.point.lat+","+new_mark.point.lng,{offset:new BMap.Size(25,0)});
+			new_mark.setLabel(label);
+		 });
+		 new_mark.addEventListener("mouseout",function(){if(sel_mark_flag%2==0) map.removeOverlay(new_mark.getLabel());}); 
+		 new_mark.addEventListener("dragend",function()
+		 {
+			 new_mark.setAnimation(null);
+			 if(sel_mark_flag%2==0) map.removeOverlay(new_mark.getLabel());
+			 if(!start_mark || !target_mark) return;
+			 if(new_mark==start_mark || new_mark==target_mark)
+			 {
+				 clearNavigationLayer();
+				 startingNavigationUsingMode();
+			 }
+		 }); 
+		 var menu = new BMap.ContextMenu();
+		 var txtMenuItem = [
+			{
+				text:'出发点',
+				callback:function()
+				{
+					start_mark=new_mark;
+					if(target_mark==new_mark) target_mark=null;
+					for(i=0;i<mark_num;++i)
+						if(mark_arr[i]==new_mark){
+							mark_arr[i].setIcon(new BMap.Icon("pin_start.png", new BMap.Size(32, 32)));
+							mark_arr[i].setAnimation(null);
+						}else{
+							if(mark_arr[i]!=target_mark) mark_arr[i].setIcon(new BMap.Icon("pin_normal.png", new BMap.Size(32, 32)));
+						}
+				}
+			},
+			{
+				text:'目标点',
+				callback:function()
+				{
+					target_mark=new_mark;
+					if(start_mark==new_mark) start_mark=null;
+					for(i=0;i<mark_num;++i)
+						if(mark_arr[i]==new_mark){
+							mark_arr[i].setIcon(new BMap.Icon("pin_target.png", new BMap.Size(32, 32)));
+							mark_arr[i].setAnimation(null);
+						}else{
+							if(mark_arr[i]!=start_mark) mark_arr[i].setIcon(new BMap.Icon("pin_normal.png", new BMap.Size(32, 32)));						
+						}
+				}
+			}
+		 ];
+		 for(var i=0; i < txtMenuItem.length; i++){
+			menu.addItem(new BMap.MenuItem(txtMenuItem[i].text,txtMenuItem[i].callback,100));
+		 }
+		 new_mark.addContextMenu(menu);		 		 
+		 map.addOverlay(new_mark);		 
+		 new_mark.enableDragging();
+		 
+		 mark_arr[mark_num]=new_mark;	
+		 $("#point_list").append("<li class='point_list_item' onclick='selectPoint("+mark_num+")'>位置"+(mark_num+1)+"</li>");
+		 ++mark_num;
+		 
+		 if(mark_type==0) start_mark=new_mark; else if(mark_type==1) target_mark=new_mark;
+		 
+		 if(cur_point.lng<=left_lng) left_lng=cur_point.lng;
+		 if(cur_point.lng>right_lng) right_lng=cur_point.lng;
+		 if(cur_point.lat>top_lat) top_lat=cur_point.lat;
+		 if(cur_point.lat<=bottom_lat) bottom_lat=cur_point.lat;
+	 }	
+	 function  selectPoint(sel_index){
+		map.centerAndZoom(mark_arr[sel_index].point,zoom_ratio);
+	 }
+	 //------------------------------- starting  navigation ----------------------------------
+	 function settingNavigationMode(new_mode){
+		 nav_mode=new_mode;
+	 }
+	 function startingNavigationUsingMode(){
+		 if(nav_mode<0 || nav_mode>3) return;		 	  
+		 if(!start_mark || !target_mark)
+		 {  
+		 	alert("请检查开始或目标点!");
+		 	return;			
+		 }		
+		 clearNavigationLayer(); 
+		 routeColor=["#0044ff","#00ff00","#202020","#ff0000"];
+		 routePolicy = [BMAP_DRIVING_POLICY_LEAST_DISTANCE,BMAP_DRIVING_POLICY_LEAST_TIME,BMAP_DRIVING_POLICY_AVOID_HIGHWAYS];
+		 if(nav_mode==0){	
+			 startingWalkingNavigation();
+		 }else if(nav_mode==1){			 	 
+			 for(i=0;i<3;++i) startingDrivingNavigation(i);		 	 			  		 			 
+		 }else if(nav_mode==2){
+			 startingShortestNavigation();
+		 }
+		 
+	 }
+	 function startingWalkingNavigation(){
+		 var drv = new BMap.WalkingRoute(my_geo.QW.address.city, { onSearchComplete: function(res) {
+			if (drv.getStatus() == BMAP_STATUS_SUCCESS) {
+				var plan = res.getPlan(0);
+				var arrPois =[];
+				for(var j=0;j<plan.getNumRoutes();j++){
+					var route = plan.getRoute(j);
+					arrPois= arrPois.concat(route.getPath());
+				}
+				//if(nav_walk_layer) map.removeOverlay(nav_walk_layer);
+				nav_walk_layer=new BMap.Polyline(arrPois, {strokeColor: routeColor[3], strokeWeight:4});
+				map.addOverlay(nav_walk_layer);
+				map.setViewport(arrPois);					   
+			}	}
+		 });		
+		 drv.search(start_mark.point,target_mark.point);
+	 }
+	 function startingDrivingNavigation(policy_num){
+		 var drv = new BMap.DrivingRoute(my_geo.QW.address.city, { onSearchComplete: function(res)
+			 {
+				if (drv.getStatus() == BMAP_STATUS_SUCCESS) {
+					var plan = res.getPlan(0);
+					var arrPois =[];
+					for(var j=0;j<plan.getNumRoutes();j++){
+						var route = plan.getRoute(j);
+						arrPois= arrPois.concat(route.getPath());
+					}
+					if(policy_num==0){
+						//if(nav_drive_layer1) map.removeOverlay(nav_drive_layer1);
+						nav_drive_layer1=new BMap.Polyline(arrPois, {strokeColor: routeColor[policy_num], strokeWeight:6});
+						map.addOverlay(nav_drive_layer1);
+					}else if(policy_num==1){
+						//if(nav_drive_layer2) map.removeOverlay(nav_drive_layer2);
+						nav_drive_layer2=new BMap.Polyline(arrPois, {strokeColor: routeColor[policy_num], strokeWeight:2});
+						map.addOverlay(nav_drive_layer2);
+					}else if(policy_num==2){
+						//if(nav_drive_layer3) map.removeOverlay(nav_drive_layer3);
+						nav_drive_layer3=new BMap.Polyline(arrPois, {strokeColor: routeColor[policy_num], strokeWeight:4});
+						map.addOverlay(nav_drive_layer3);
+					}					
+					map.setViewport(arrPois);			   
+				}
+			 },policy: routePolicy[policy_num]});		
+		 drv.search(start_mark.point,target_mark.point);
+	 }
+	 function startingShortestNavigation(){
+		 startingWalkingNavigation();
+		 startingDrivingNavigation(0);
+	 }
+	 function clearNavigationLayer(){
+		 if(nav_walk_layer) map.removeOverlay(nav_walk_layer);
+		 if(nav_drive_layer1) map.removeOverlay(nav_drive_layer1);
+		 if(nav_drive_layer2) map.removeOverlay(nav_drive_layer2);
+		 if(nav_drive_layer3) map.removeOverlay(nav_drive_layer3);
+	 }
+	 /*
+	 function startingSearchingNavigation(){
+		 if(!start_mark || !target_mark)
+		 {  
+		 	alert("请检查开始或目标点!");
+		 	return;			
+		 }
+		 		 
+		 var drv = new BMap.DrivingRoute(my_geo.QW.address.city, {
+			onSearchComplete: function(res) {
+				if (drv.getStatus() == BMAP_STATUS_SUCCESS) {
+					var plan = res.getPlan(0);
+					var arrPois =[];
+					for(var j=0;j<plan.getNumRoutes();j++){
+						var route = plan.getRoute(j);
+						arrPois= arrPois.concat(route.getPath());
+					}
+					if(navigate_layer) map.removeOverlay(navigate_layer);
+					navigate_layer=new BMap.Polyline(arrPois, {strokeColor: '#111'})
+					map.addOverlay(navigate_layer);
+					map.setViewport(arrPois);	
+					alert("总路程为 ："+plan.getDistance(true)+"\n"+"时间 ："+plan.getDuration(true));				   
+				}
+			}
+		 });		
+		 drv.search(start_mark.point,target_mark.point);
+	 }*/
+	 //------------------------------- check coordinate with longitude and lantitude -----------------------------------
+	 function checkMouseCursorPosition(){
+		 if(prev_point!=cur_point){
+			 time_count=0;
+			 prev_point=cur_point;
+			 return; 
+		 }		 
+		 if(time_count==timeout){
+      		 time_count=0;			 
+			 // add new bubble pin to cursor current position
+			 addPinMarkToMouseCursorPosition();			 
+			 return;
+		 }
+		 ++time_count;
+	 }
+	 // ------------------------------ obtain mouse cursor coordinate with longitude and lantitude 
+	 function getMousePositionInformation(e){	
+	 	 prev_point=cur_point; // set cursor previous position on Baidu Map
+		 cur_point=e.point; // set cursor current position on Baidu Map
+		 center_point=map.getCenter(); // set map center position on Baidu Map
+		 zoom_ratio=map.getZoom(); // set current zoom ration on Baidu Map
+	 } 
+	 //-------------------------------- add my position mark ----------------------------------------
+	 function addMyPositionMark(){
+		 var myIcon = new BMap.Icon("my_pos_red.png", new BMap.Size(32, 32));	
+         my_pos_mark = new BMap.Marker(my_point,{icon:myIcon}); // current my position mark
+		 map.addOverlay(my_pos_mark);
+		 //my_pos_mark.setAnimation(BMAP_ANIMATION_BOUNCE);
+		 var opts = {
+		 	width : 200,     // 信息窗口宽度
+		 	height: 50,     // 信息窗口高度
+		 	title : "你的地址" , // 信息窗口标题
+		 	enableMessage:true,//设置允许信息窗发送短息
+		 	message:""
+		 }
+		 var infoWindow = new BMap.InfoWindow(my_geo.QW.address.province+" "+my_geo.QW.address.city+" "+my_geo.QW.address.street+" "+my_geo.QW.address.street_number, opts);  // 创建信息窗口对象 
+		 my_pos_mark.addEventListener("click", function(){ 
+			map.openInfoWindow(infoWindow,cur_point); //开启信息窗口
+		 }); 		 
+	 }
+	 //------------------------------- show my current position -----------------------------
+	 function showMyCurrentPosition(){		
+	 	 resetLayerAndMark();
+		 zoom_ratio=17; // set zoom ratio
+		 map.centerAndZoom(my_point,zoom_ratio);		 		 
+		 prev_point=my_point; // set cursor previous position using my position
+		 cur_point=my_point; // set cursor current position using my position
+		 center_point=my_point; // set center position using my position
+	 }
+	 //------------------------------- show normal map ----------------------------------------
+	 function showNormalMap(){
+		 resetLayerAndMark();
+		 map.setMapType(BMAP_NORMAL_MAP);		 
+	 }
+	 // ------------------------------- show satellite map --------------------------------------
+	 function showSatelliteMap(){
+		 resetLayerAndMark();
+		 map.setMapType(BMAP_HYBRID_MAP);		 
+	 }
+	 // ------------------------------- show panorama map --------------------------------------- 
+	 function showPanoramaMap(){
+		 resetLayerAndMark();
+		 map.setMapType(BMAP_NORMAL_MAP);		 
+		 panorama_layer=new BMap.PanoramaCoverageLayer();
+		 map.addTileLayer(panorama_layer);
+		 panorama_control = new BMap.PanoramaControl();
+		 panorama_control.setOffset(new BMap.Size(10, 10));
+		 map.addControl(panorama_control);		 
+	 }
+	 // -------------------------------- reset map contents ------------------------------------------- 
+	 function resetLayerAndMark(){
+		 if(center_point && zoom_ratio) map.centerAndZoom(center_point,zoom_ratio);
+		 if(panorama_layer) map.removeTileLayer(panorama_layer);
+		 if(panorama_control) map.removeControl(panorama_control);
+		 if(my_pos_mark) map.removeOverlay(my_pos_mark);
+		 map.setMapType(BMAP_NORMAL_MAP);
+		 addMyPositionMark();
+	 }	 
+	 
+</script>

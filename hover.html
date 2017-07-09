@@ -1,0 +1,29 @@
+<html>
+<head>
+<style>
+	.dropdown-content :hover {background-color: #f1f1f1}
+</style>
+<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>
+<script>
+$(document).ready(function(){
+	$(".map_type_context_menu_area").toggle();
+    $(".map_type_context").hover(function(){
+        $(".map_type_context_menu_area").toggle();
+    });
+	
+});
+
+</script>
+</head>
+<body>
+    <div class="map_type_context" style="border:solid 2px">
+        <button  class="map_type_btn">menu</button>
+        <div class="map_type_context_menu_area">
+            <a href="#" class="map_type_menuitem">Link 1</a><br>
+            <a href="#" class="map_type_menuitem">Link 2</a><br>
+            <a href="#" class="map_type_menuitem">Link 3</a>
+        </div>
+    </div>
+</body>
+</html>
+
